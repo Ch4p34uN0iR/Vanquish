@@ -9,6 +9,8 @@
 # DONE: Create custom password word list from CEWL URL Findings, Users, domains, groups, ComputerName
 # DONE: Installer script and setup
 
+# TODO: Seclist directory enumeration orchestation / Seclist user enumeration / Seclist brute forcing
+# TODO: Add some FILTERED port results back in if they prodivde enumeration value (MongoDB)
 # TODO: Attack plans config associated with one or more Config files - simplify - only specify an attack plan and a target
 # TODO: Load findings from files here for merging - dont overwrite user added findings...
 # TODO: SMB Hydra is running twice - 139 and 445 - 445 is the only service that returns results - STOP hydra from running 139
@@ -43,6 +45,7 @@
 #       TODO: Spider site
 #       TODO: HTTP Download all assets
 #       TODO: Image Scan - Meta / Steg / OCRd
+#       TODO: Grab screen shots of pages found
 #       Create Site Map txt file for all assets
 #       Create Wordlist version1
 #
@@ -59,8 +62,8 @@ Main application logic and automation functions
 """
 from parser import ParserError
 
-__version__ = '0.24'
-__lastupdated__ = 'September 8, 2017'
+__version__ = '0.29'
+__lastupdated__ = 'March 18, 2018'
 __nmap_folder__ = 'Nmap'
 __findings_label__ = 'findings'
 __accounce_label__ = 'announce'
@@ -280,8 +283,9 @@ class Vanquish:
         self.banner()
         print(Color.green()+"Vanquish Version: " + __version__ + " Updated: " + __lastupdated__ +Color.reset())
         self.parser = argparse.ArgumentParser(
-            description='Boot2Root automation platform designed to systematically enumernate and exploit using the'
-                        ' law of diminishing returns.')
+            description='Vanquish is Kali Linux based Enumeration Orchestrator.')
+        self.parser.add_argument("-install", action='store_true',
+                                 help='Install Vanquish and it\'s requirements')
         self.parser.add_argument("-outputFolder", metavar='folder', type=str, default="",
                                  help='output folder path (default: name of the host file))')
         self.parser.add_argument("-configFile", metavar='file', type=str, default="config.ini",
@@ -318,6 +322,11 @@ class Vanquish:
         self.args = self.parser.parse_args()
         self.hosts = self.args.hostFile
 
+        # Installation Setup
+        if self.args.install:
+            self.args.configFile = "install.ini"
+            self.args.attackPlanFile = "installplan.ini"
+
         # load config
         self.config = ConfigParser.ConfigParser()
         self.config.read(self.args.configFile)
@@ -325,12 +334,11 @@ class Vanquish:
         Logger.VERBOSE = (self.config.getboolean("System", "Verbose") or self.args.verbose)
         Logger.DEBUG = (self.config.getboolean("System", "Debug") or self.args.debug)
 
-
         # Default output location
         if self.args.outputFolder == "":
             self.args.outputFolder = "." + os.path.sep + str(self.args.hostFile.name).split(".")[0]
 
-	# Nmap scan output folder
+	    # Nmap scan output folder
         self.nmap_path = os.path.join(self.args.outputFolder, __nmap_folder__)
 
         # Check folder for existing output and nmap folders
@@ -338,11 +346,12 @@ class Vanquish:
             os.makedirs(self.args.outputFolder)
         elif not self.args.noResume:
             print Color.yellow()+"[*]"+Color.reset()+" Resuming previous session"
-	if not os.path.exists(self.nmap_path):
-            os.makedirs(self.nmap_path)
 
-	if self.args.noColor:
-		Color.ENABLE_COLOR = False;
+        if not os.path.exists(self.nmap_path):
+                os.makedirs(self.nmap_path)
+
+        if self.args.noColor:
+            Color.ENABLE_COLOR = False;
 
         # Metasploit workspace name - the workspace name is the name of the host file minus it's extension
         if self.args.workspace == "":
@@ -561,6 +570,7 @@ class Vanquish:
                                         # Still have a findings tag in the command?  do not add it to the list -
                                         if "<" + __findings_label_dynamic__ + " " in command:
                                             do_not_append = True
+                                            Logger.debug("enumerate() - Did not append command that still contained findings label" + command )
                                         # Findings Lists
                                         if "<" + __findings_label_list_dynamic__ + " " in command:
                                             findings_path = os.path.join(self.args.outputFolder, host.replace(".", "_"))
@@ -568,6 +578,8 @@ class Vanquish:
                                             for findings_file in findings_files:
                                                 replacement = "<" + __findings_label_list_dynamic__ + " " + str(
                                                     findings_file).replace(".txt", "") + ">"
+                                                #TODO Delimited Findings ? REGEX Delim
+                                                #delim = "<" + __findings_label_dynamic__ + " " + str(findings_file).replace(".txt", "") + " .+>"
                                                 if replacement in command:
                                                     findings_file_path = os.path.join(findings_path, findings_file)
                                                     with open(findings_file_path) as f:
@@ -824,12 +836,6 @@ class Vanquish:
     @property
     def main(self):
         start_time = time.time()
-        print("Use the -h parameter for detailed help.")
-        print(
-        "Press CTRL + C to exit an enumeration phase and skip to the next phase (helpful if a command is taking too long)")
-        print("Vanquish will skip running a command again if it sees that the output files already exist.")
-        print(
-        "If you want to re-execute a command, delete the output files (.txt,.xml,.nmap etc.) and run Vanquish again.")
         print Color.cyan()
         print("Configuration file: " + str(self.args.configFile))
         print("Attack plan file:   " + str(self.args.attackPlanFile))
